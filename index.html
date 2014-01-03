@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas id="c" width="300" height="300" style="border:1px solid #d3d3d3;">
+Your browser does not support the HTML5 canvas tag.</canvas>
+
+<script>
+
+var pointOffset = 5;
+
+function Rect(topLeft, bottomRight){
+	this.left = topLeft.x;
+	this.top = topLeft.y;
+	this.right = bottomRight.x;
+	this.bottom = bottomRight.y;
+	this.width = this.right-this.left;
+	this.height = this.bottom-this.top;
+};
+
+function Point(x, y){
+	this.x = x;
+	this.y = y;
+};
+Point.prototype.getRect = function(){
+	var topLeft = this.calculateNewPoint(new Vector(pointOffset, pointOffset), "-");
+	var bottomRight = this.calculateNewPoint(new Vector(pointOffset, pointOffset));
+	return new Rect(topLeft, bottomRight);
+};
+Point.prototype.contains = function(pt){
+	/* M is a point inside this rectangle if the following is true
+	 	(0 < AM*AB < AB*AB) && (0 < AM*AD < AD*AD)
+		
+		Although canvas.getContext().rect().isPointInPath() should do the same trick, 
+		I noticed it after implementing all the code :p
+	*/
+	var rect = this.getRect();
+	var a = new Point(rect.left, rect.top);
+	var b = new Point(rect.right, rect.top);
+	var d = new Point(rect.right, rect.bottom);
+	var m = pt;
+	var am = calculateDistance(a, m);
+	var ab = calculateDistance(a, b);
+	var amab =  am * ab;
+	var abSqr = ab * ab;
+	if(!(0 < amab && amab < abSqr))
+		return false;
+	
+	var am = calculateDistance(a, m);
+	var ad = calculateDistance(a, d);
+	var amad =  am * ad;
+	var adSqr = ad * ad;	
+	
+	if(!(0 < amad && amad < adSqr))
+		return false;
+	return true;
+};
+Point.prototype.calculateNewPoint = function(vec, operator){
+	var x, y;
+	switch(operator)
+	{
+		case "-":
+			x = this.x - vec.x; 
+			y = this.y - vec.y;
+			break;
+		default:
+			x = this.x + vec.x; 
+			y = this.y + vec.y;
+			break;
+	};	
+	return new Point(x, y);
+};
+Point.prototype.calculateVector = function(pt){
+	return new Vector(this.x-pt.x, this.y-pt.y);
+};
+Point.prototype.move = function(vec){
+	this.x = this.x - vec.x;
+	this.y = this.y - vec.y;
+	drawBezierLine();	// redraw the line
+};
+
+function Vector(x, y){
+	this.x = x;
+	this.y = y;
+};
+
+function calculateDistance(pt1, pt2){
+	var c = Math.pow(pt1.x-pt2.x, 2) + Math.pow(pt1.y-pt2.y, 2);
+	return Math.sqrt(c);
+};
+
+var bezierInfo = {
+	points:[
+		new Point(10, 10)
+		, new Point(250, 20)
+		, new Point(20, 150)
+		, new Point(250, 250)
+	],
+	getControlPoints: function(){
+		return this.points.slice(1,3);
+	},
+	getStartPoint: function(){
+		return this.points[0];
+	},
+	getEndPoint: function(){
+		return this.points[3];
+	},
+	getHitPoint: function(pt){
+		var i;
+		for(i = 0; i < this.points.length; i ++){
+			if(this.points[i].contains(pt))
+				return this.points[i];
+		}
+		return null;
+	}
+};
+
+var isDragging = false;
+var draggingPoint = null;
+var lastDraggingPoint = null;
+var canvas=document.getElementById("c");
+var c=canvas.getContext("2d");
+canvas.addEventListener("mousedown", function(event){
+	var x = event.x - canvas.offsetLeft - 1;	// 1 is border width
+	var y = event.y - canvas.offsetTop - 1;
+	var clickedPoint = new Point(x, y);
+	draggingPoint = bezierInfo.getHitPoint(clickedPoint);
+	isDragging = false;
+	if(draggingPoint !== null){
+		lastDraggingPoint = clickedPoint;
+		isDragging = true;
+	}	
+}, true);
+
+canvas.addEventListener("mousemove", function(event){
+	if(!isDragging)
+		return;	
+	var currentPoint = new Point(event.x, event.y);
+	var vector = lastDraggingPoint.calculateVector(currentPoint);
+	lastDraggingPoint = currentPoint;
+	draggingPoint.move(vector);
+}, true);
+
+canvas.addEventListener("mouseup", function(event){
+	isDragging = false;
+}, true);
+
+canvas.addEventListener("mouseout", function(event){
+	isDragging = false;
+}, true);
+
+function drawBezierLine(){
+	var bi = bezierInfo
+		, sp = bi.getStartPoint()
+		, ep = bi.getEndPoint()
+		, cps = bi.getControlPoints()
+		, i;
+	c.clearRect(0,0,300,300);
+	c.strokeStyle = "#000000";
+	c.beginPath();
+	c.moveTo(sp.x,sp.y);
+	c.bezierCurveTo(cps[0].x,cps[0].y, cps[1].x,cps[1].y, ep.x,ep.y);
+	c.stroke();
+	
+	c.strokeStyle = "#ffa500";
+	c.beginPath();
+	c.moveTo(sp.x, sp.y);
+	c.lineTo(cps[0].x, cps[0].y);
+	c.stroke();
+	
+	c.beginPath();
+	c.moveTo(ep.x, ep.y);
+	c.lineTo(cps[1].x, cps[1].y);
+	c.stroke();	
+	
+	for(i = 0; i < bi.points.length; i ++){
+		c.fillStyle = i === 0 || i === 3 ? "#ff0000" : "#ffa500";
+		var r = bi.points[i].getRect();
+		c.fillRect(r.left, r.top, r.width, r.height);
+	}
+};
+
+drawBezierLine();
+
+</script> 
+</body>
+</html>
