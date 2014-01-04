@@ -119,12 +119,12 @@ function calculateDividingPoints(){
 		, bi = bezierInfo
 		, i;
 	for(i = 0.1; i <= 1.0; i += 0.1){
-		dividingCurveRecursively(bi, points, i-0.1, i);	
+		divideCurveRecursively(bi, points, i-0.1, i);	
 	}
 	points.push(bi.points[bi.points.length-1]);
 	bi.dividingPoints = points;
 };
-function dividingCurveRecursively(bi, points, t1, t2){
+function divideCurveRecursively(bi, points, t1, t2){
 	var prevD = getSlopeOfTangentLine(bi.points, t1)
 		, currentD = getSlopeOfTangentLine(bi.points, t2)
 		, dDiff = Math.abs(Math.abs(prevD)-Math.abs(currentD))
@@ -132,8 +132,8 @@ function dividingCurveRecursively(bi, points, t1, t2){
 		, middleT = t1 + mDiff / 2;
 		
 	if(mDiff > 0.05 && (sign(prevD) !== sign(currentD) || dDiff > 0.2)){
-		dividingCurveRecursively(bi, points, t1, middleT);
-		dividingCurveRecursively(bi, points, middleT, t2);
+		divideCurveRecursively(bi, points, t1, middleT);
+		divideCurveRecursively(bi, points, middleT, t2);
 	}
 	else
 		points.push(getPointOnBezier(bi.points, t1));
