@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html>
 <body>
-<canvas id="c" width="300" height="300" style="border:1px solid #d3d3d3;">
+<canvas id="canvas" width="300" height="300" style="border:1px solid #d3d3d3;">
 Your browser does not support the HTML5 canvas tag.</canvas>
 
 <script>
 
-var pointOffset = 5;
-
+// 2d coordinate classes
 function Rect(topLeft, bottomRight){
 	this.left = topLeft.x;
 	this.top = topLeft.y;
@@ -21,9 +20,10 @@ function Point(x, y){
 	this.x = x;
 	this.y = y;
 };
+var pointOffset = 5;
 Point.prototype.getRect = function(){
-	var topLeft = this.calculateNewPoint(new Vector(pointOffset, pointOffset), "-");
-	var bottomRight = this.calculateNewPoint(new Vector(pointOffset, pointOffset));
+	var topLeft = this.createNewPoint(new Vector(pointOffset, pointOffset), "-")
+		, bottomRight = this.createNewPoint(new Vector(pointOffset, pointOffset));
 	return new Rect(topLeft, bottomRight);
 };
 Point.prototype.contains = function(pt){
@@ -33,28 +33,28 @@ Point.prototype.contains = function(pt){
 		Although canvas.getContext().rect().isPointInPath() should do the same trick, 
 		I noticed it after implementing all the code :p
 	*/
-	var rect = this.getRect();
-	var a = new Point(rect.left, rect.top);
-	var b = new Point(rect.right, rect.top);
-	var d = new Point(rect.right, rect.bottom);
-	var m = pt;
-	var am = calculateDistance(a, m);
-	var ab = calculateDistance(a, b);
-	var amab =  am * ab;
-	var abSqr = ab * ab;
+	var rect = this.getRect()
+		, a = new Point(rect.left, rect.top)
+		, b = new Point(rect.right, rect.top)
+		, d = new Point(rect.right, rect.bottom)
+		, m = pt
+		, am = calculateDistance(a, m)
+		, ab = calculateDistance(a, b)
+		, amab =  am * ab
+		, abSqr = ab * ab
 	if(!(0 < amab && amab < abSqr))
 		return false;
 	
-	var am = calculateDistance(a, m);
-	var ad = calculateDistance(a, d);
-	var amad =  am * ad;
-	var adSqr = ad * ad;	
+	var am = calculateDistance(a, m)
+		, ad = calculateDistance(a, d)
+		, amad =  am * ad
+		, adSqr = ad * ad;	
 	
 	if(!(0 < amad && amad < adSqr))
 		return false;
 	return true;
 };
-Point.prototype.calculateNewPoint = function(vec, operator){
+Point.prototype.createNewPoint = function(vec, operator){
 	var x, y;
 	switch(operator)
 	{
@@ -83,9 +83,83 @@ function Vector(x, y){
 	this.y = y;
 };
 
+// bezier functions
+function b0(t) { return Math.pow(1 - t, 3); };
+function b1(t) { return t * Math.pow(1 - t, 2) * 3; };
+function b2(t) { return (1 - t) * Math.pow(t, 2) * 3; };
+function b3(t) { return Math.pow(t, 3); };
+function getPointOnBezier(points, t){
+	// the cubic bezier formula is b(t) = p0*(1-t)^3 + p1*3t(1-t)^2 + p2*3(1-t)t^2 + p3*t^3
+	var x = points[0].x * b0(t) + points[1].x * b1(t) + points[2].x * b2(t) + points[3].x * b3(t)
+		, y = points[0].y * b0(t) + points[1].y * b1(t) + points[2].y * b2(t) + points[3].y * b3(t);
+	return new Point(x, y);
+};
+
+function bd0(t) { return 3 * Math.pow(1-t, 2); };
+function bd1(t) { return 6 * (1-t) * t; };
+function bd2(t) { return 3 * Math.pow(t, 2); };
+function getBezierDerivative(points, t){
+	// the derivative of the bezier formula	b'(t) = 3(1-t)^2(p1-p0) + 6(1-t)t(p2-p1) + 3t^2(p3-p2)
+	var x = bd0(t) * (points[1].x-points[0].x) + bd1(t) * (points[2].x-points[1].x) + bd2(t) * (points[3].x-points[2].x)
+		, y = bd0(t) * (points[1].y-points[0].y) + bd1(t) * (points[2].y-points[1].y) + bd2(t) * (points[3].y-points[2].y);
+	return y/x;
+};
+
+// utils
 function calculateDistance(pt1, pt2){
 	var c = Math.pow(pt1.x-pt2.x, 2) + Math.pow(pt1.y-pt2.y, 2);
 	return Math.sqrt(c);
+};
+function sign(n){
+	return n ? n < 0 ? -1 : 1 : 0;
+}
+function calculateDividingPoints(){
+	// divide the curve to points to be a straight line as much as possible and use them later for hittest.
+	var points = []
+		, bi = bezierInfo
+		, i;
+	for(i = 0.1; i <= 1.0; i += 0.1){
+		dividingCurveRecursively(bi, points, i-0.1, i);	
+	}
+	points.push(bi.points[bi.points.length-1]);
+	bi.dividingPoints = points;
+};
+function dividingCurveRecursively(bi, points, t1, t2){
+	var prevD = getBezierDerivative(bi.points, t1)
+		, currentD = getBezierDerivative(bi.points, t2)
+		, dDiff = Math.abs(Math.abs(prevD)-Math.abs(currentD))
+		, mDiff = t2-t1
+		, middleT = t1 + mDiff / 2;
+		
+	if(mDiff > 0.05 && (sign(prevD) !== sign(currentD) || dDiff > 0.2)){
+		dividingCurveRecursively(bi, points, t1, middleT);
+		dividingCurveRecursively(bi, points, middleT, t2);
+	}
+	else
+		points.push(getPointOnBezier(bi.points, t1));
+};
+function testHit(pt){
+	var bi = bezierInfo
+		, result = onStraightLine(pt);	
+	if(result !== bi.isHit){
+		bi.isHit = result;
+		drawBezierLine();
+	}	
+};
+function onStraightLine(pt){
+	var bi = bezierInfo
+		, i;
+	for(i = 1; i < bi.dividingPoints.length; i ++){
+		var p1 = bi.dividingPoints[i-1]
+			, p2 = bi.dividingPoints[i]
+			, trueDistance = calculateDistance(p1, p2)
+			, testDistance1 = calculateDistance(p1, pt)
+			, testDistance2 = calculateDistance(pt, p2);
+		// the distance is exactly same if the point is on the straight line
+		if(Math.abs(trueDistance - (testDistance1 + testDistance2)) < 0.2)
+			return true;
+	}	
+	return false;
 };
 
 var bezierInfo = {
@@ -111,18 +185,23 @@ var bezierInfo = {
 				return this.points[i];
 		}
 		return null;
-	}
+	},
+	dividingPoints: null,
+	isHit: false
 };
 
-var isDragging = false;
-var draggingPoint = null;
-var lastDraggingPoint = null;
-var canvas=document.getElementById("c");
-var c=canvas.getContext("2d");
+// canvas
+var isDragging = false
+	, draggingPoint = null
+	, lastDraggingPoint = null
+	, canvas = document.getElementById("canvas")
+	, c = canvas.getContext("2d");
+	
 canvas.addEventListener("mousedown", function(event){
-	var x = event.x - canvas.offsetLeft - 1;	// 1 is border width
-	var y = event.y - canvas.offsetTop - 1;
-	var clickedPoint = new Point(x, y);
+	var x = event.x - canvas.offsetLeft - 1	// 1 is border width
+		, y = event.y - canvas.offsetTop - 1
+		, clickedPoint = new Point(x, y);
+	testHit(clickedPoint);
 	draggingPoint = bezierInfo.getHitPoint(clickedPoint);
 	isDragging = false;
 	if(draggingPoint !== null){
@@ -134,8 +213,8 @@ canvas.addEventListener("mousedown", function(event){
 canvas.addEventListener("mousemove", function(event){
 	if(!isDragging)
 		return;	
-	var currentPoint = new Point(event.x, event.y);
-	var vector = lastDraggingPoint.calculateVector(currentPoint);
+	var currentPoint = new Point(event.x, event.y)
+		, vector = lastDraggingPoint.calculateVector(currentPoint);
 	lastDraggingPoint = currentPoint;
 	draggingPoint.move(vector);
 }, true);
@@ -154,8 +233,18 @@ function drawBezierLine(){
 		, ep = bi.getEndPoint()
 		, cps = bi.getControlPoints()
 		, i;
+		
 	c.clearRect(0,0,300,300);
-	c.strokeStyle = "#000000";
+	calculateDividingPoints();
+	for(i = 0; i < bi.dividingPoints.length; i ++){
+		var dp = bi.dividingPoints[i];
+		c.fillStyle = "#0000ff";
+		c.beginPath();
+		c.arc(dp.x, dp.y, 1.5, 0, Math.PI*2);
+		c.fill();
+	}
+	
+	c.strokeStyle = bi.isHit ? "#00ff00" : "#000000";
 	c.beginPath();
 	c.moveTo(sp.x,sp.y);
 	c.bezierCurveTo(cps[0].x,cps[0].y, cps[1].x,cps[1].y, ep.x,ep.y);
